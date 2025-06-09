@@ -3,8 +3,10 @@ package main
 import (
 	"fmt"
 	"github.com/charmbracelet/bubbles/cursor"
+	"github.com/charmbracelet/bubbles/stopwatch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"time"
 
 	"os"
 )
@@ -14,6 +16,19 @@ type model struct {
 	position      int
 	errorPosition *int
 	cursor        cursor.Model
+	stopwatch     stopwatch.Model
+}
+
+func (m model) isAtEnd() bool {
+	return m.position == len(m.currentWord)
+}
+
+func (m model) isCompleted() bool {
+	return m.isAtEnd() && !m.hasError()
+}
+
+func (m model) hasError() bool {
+	return m.errorPosition != nil
 }
 
 func initialModel() model {
@@ -21,10 +36,11 @@ func initialModel() model {
 	c.Focus()
 
 	return model{
-		currentWord:   "Hello world, this is a typing test! How fast can you type? ",
+		currentWord:   "Hello world, this is a typing test! How fast can you type?",
 		position:      0,
 		cursor:        c,
 		errorPosition: nil,
+		stopwatch:     stopwatch.NewWithInterval(time.Millisecond),
 	}
 }
 
@@ -33,7 +49,28 @@ func (m model) Init() tea.Cmd {
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	var cmds []tea.Cmd
+
 	oldPosition := m.position
+
+	if m.isCompleted() {
+		switch msg := msg.(type) {
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "ctrl+c", "esc":
+				return m, tea.Quit
+			case "enter":
+				return initialModel(), nil
+			}
+		}
+
+		if m.stopwatch.Running() {
+			return m, m.stopwatch.Stop()
+		}
+
+		return m, nil
+	}
 
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
@@ -49,8 +86,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errorPosition = nil
 			}
 		default:
-			if m.position == len(m.currentWord)-1 {
+			if m.isAtEnd() {
 				break
+			}
+
+			if !m.stopwatch.Running() {
+				cmds = append(cmds, m.stopwatch.Start())
 			}
 
 			if msg.String() != string(m.currentWord[m.position]) {
@@ -65,10 +106,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	}
 
-	var cmd tea.Cmd
-	var cmds []tea.Cmd
-
 	m.cursor, cmd = m.cursor.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.stopwatch, cmd = m.stopwatch.Update(msg)
 	cmds = append(cmds, cmd)
 
 	if m.position != oldPosition && m.cursor.Mode() == cursor.CursorBlink {
@@ -80,10 +121,23 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	s := m.renderCurrentWord()
+	s += "\n\n"
+	s += m.stopwatch.View()
+	s += "\n\n"
+
+	if m.isCompleted() {
+		s += "Press enter to restart.\n"
+	}
+
+	s += "Press esc to quit.\n"
+
+	return s
+}
+
+func (m model) renderCurrentWord() string {
 	completedStyle := lipgloss.NewStyle().Background(lipgloss.Color("#2E8B57")).Foreground(lipgloss.Color("#FFF"))
 	errorStyle := lipgloss.NewStyle().Background(lipgloss.Color("#FF6347")).Foreground(lipgloss.Color("#FFF"))
-
-	m.cursor.SetChar(string(m.currentWord[m.position]))
 
 	var s string
 
@@ -94,9 +148,13 @@ func (m model) View() string {
 		s += completedStyle.Render(m.currentWord[:m.position])
 	}
 
-	s += m.cursor.View() + m.currentWord[m.position+1:]
+	if m.isAtEnd() {
+		return s
+	}
 
-	s += "\nPress esc to quit.\n"
+	m.cursor.SetChar(string(m.currentWord[m.position]))
+
+	s += m.cursor.View() + m.currentWord[m.position+1:]
 
 	return s
 }
