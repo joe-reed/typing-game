@@ -17,6 +17,7 @@ type model struct {
 	errorPosition *int
 	cursor        cursor.Model
 	stopwatch     stopwatch.Model
+	times         []time.Duration
 }
 
 func (m model) isAtEnd() bool {
@@ -54,6 +55,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	oldPosition := m.position
 
+	m.cursor, cmd = m.cursor.Update(msg)
+	cmds = append(cmds, cmd)
+
+	m.stopwatch, cmd = m.stopwatch.Update(msg)
+	cmds = append(cmds, cmd)
+
 	if m.isCompleted() {
 		switch msg := msg.(type) {
 		case tea.KeyMsg:
@@ -61,15 +68,19 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c", "esc":
 				return m, tea.Quit
 			case "enter":
-				return initialModel(), nil
+				newModel := initialModel()
+				newModel.times = m.times
+
+				return newModel, tea.Batch(cmds...)
 			}
 		}
 
 		if m.stopwatch.Running() {
+			m.times = append(m.times, m.stopwatch.Elapsed())
 			return m, m.stopwatch.Stop()
 		}
 
-		return m, nil
+		return m, tea.Batch(cmds...)
 	}
 
 	switch msg := msg.(type) {
@@ -103,14 +114,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 			m.position++
 		}
-
 	}
-
-	m.cursor, cmd = m.cursor.Update(msg)
-	cmds = append(cmds, cmd)
-
-	m.stopwatch, cmd = m.stopwatch.Update(msg)
-	cmds = append(cmds, cmd)
 
 	if m.position != oldPosition && m.cursor.Mode() == cursor.CursorBlink {
 		m.cursor.Blink = false
@@ -124,7 +128,12 @@ func (m model) View() string {
 	s := m.renderCurrentWord()
 	s += "\n\n"
 	s += m.stopwatch.View()
-	s += "\n\n"
+	s += "\n"
+	for i, t := range m.times {
+		s += fmt.Sprintf("Time %d: %s\n", i+1, t.String())
+	}
+
+	s += "\n"
 
 	if m.isCompleted() {
 		s += "Press enter to restart.\n"
