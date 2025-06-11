@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/stopwatch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"strings"
 	"time"
 
 	"os"
@@ -30,6 +31,17 @@ func (m model) isCompleted() bool {
 
 func (m model) hasError() bool {
 	return m.errorPosition != nil
+}
+
+func (m model) wordsPerMinute() float64 {
+	wordCount := len(strings.Split(m.currentWord, " "))
+	minutes := m.stopwatch.Elapsed().Minutes()
+
+	if minutes == 0 {
+		return 0
+	}
+
+	return float64(wordCount) / minutes
 }
 
 func initialModel() model {
@@ -129,6 +141,9 @@ func (m model) View() string {
 	s += "\n\n"
 	s += m.stopwatch.View()
 	s += "\n"
+	s += fmt.Sprintf("%.2fwpm", m.wordsPerMinute())
+	s += "\n"
+
 	for i, t := range m.times {
 		s += fmt.Sprintf("Time %d: %s\n", i+1, t.String())
 	}
