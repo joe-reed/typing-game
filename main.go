@@ -6,7 +6,9 @@ import (
 	"github.com/charmbracelet/bubbles/stopwatch"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/wordgen/wordlists/eff"
 	"math"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -50,12 +52,21 @@ func initialModel() model {
 	c.Focus()
 
 	return model{
-		currentWord:   "Hello world, this is a typing test! How fast can you type?",
+		currentWord:   getSentence(),
 		position:      0,
 		cursor:        c,
 		errorPosition: nil,
 		stopwatch:     stopwatch.NewWithInterval(time.Millisecond),
 	}
+}
+
+func getSentence() string {
+	var words []string
+	for i := 0; i < 8; i++ {
+		idx := rand.Intn(len(eff.Large))
+		words = append(words, eff.Large[idx])
+	}
+	return strings.Join(words, " ")
 }
 
 func (m model) Init() tea.Cmd {
