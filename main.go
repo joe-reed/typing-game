@@ -22,6 +22,7 @@ type model struct {
 	cursor        cursor.Model
 	stopwatch     stopwatch.Model
 	times         []time.Duration
+	highscore     time.Duration
 }
 
 func (m model) isAtEnd() bool {
@@ -57,6 +58,7 @@ func initialModel() model {
 		cursor:        c,
 		errorPosition: nil,
 		stopwatch:     stopwatch.NewWithInterval(time.Millisecond),
+		highscore:     0,
 	}
 }
 
@@ -70,10 +72,65 @@ func getSentence() string {
 }
 
 func (m model) Init() tea.Cmd {
-	return cursor.Blink
+	return tea.Batch(cursor.Blink, LoadHighscore)
+}
+
+func SaveHighScore(time time.Duration) tea.Cmd {
+	return func() tea.Msg {
+		file, err := os.OpenFile("highscore.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
+		if err != nil {
+			return tea.Quit()
+		}
+
+		defer file.Close()
+
+		_, err = file.WriteString(time.String())
+
+		if err != nil {
+			return tea.Quit()
+		}
+
+		return nil
+	}
+}
+
+type LoadedHighscoreMsg struct {
+	Highscore time.Duration
+}
+
+type FailedToLoadHighscoreMsg struct {
+	Error error
+}
+
+func LoadHighscore() tea.Msg {
+	data, err := os.ReadFile("highscore.txt")
+
+	if err != nil {
+		if os.IsNotExist(err) {
+			return LoadedHighscoreMsg{Highscore: 0}
+		}
+
+		return FailedToLoadHighscoreMsg{Error: err}
+	}
+
+	duration, err := time.ParseDuration(strings.TrimSpace(string(data)))
+	if err != nil {
+		return FailedToLoadHighscoreMsg{Error: err}
+	}
+
+	return LoadedHighscoreMsg{Highscore: duration}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if _, ok := msg.(LoadedHighscoreMsg); ok {
+		m.highscore = msg.(LoadedHighscoreMsg).Highscore
+		return m, nil
+	}
+
+	if _, ok := msg.(FailedToLoadHighscoreMsg); ok {
+		return m, tea.Quit
+	}
+
 	var cmd tea.Cmd
 	var cmds []tea.Cmd
 
@@ -94,14 +151,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "enter":
 				newModel := initialModel()
 				newModel.times = m.times
+				newModel.highscore = m.highscore
 
 				return newModel, tea.Batch(cmds...)
 			}
 		}
 
 		if m.stopwatch.Running() {
-			m.times = append(m.times, m.stopwatch.Elapsed())
-			return m, m.stopwatch.Stop()
+			time := m.stopwatch.Elapsed()
+			m.times = append(m.times, time)
+
+			if time < m.highscore || m.highscore == 0 {
+				m.highscore = time
+				cmds = append(cmds, SaveHighScore(m.highscore))
+			}
+
+			cmds = append(cmds, m.stopwatch.Stop())
+
+			return m, tea.Batch(cmds...)
 		}
 
 		return m, tea.Batch(cmds...)
@@ -161,6 +228,8 @@ func (m model) View() string {
 	}
 
 	s += "\n"
+
+	s += fmt.Sprintf("Highscore: %s\n", m.highscore.String())
 
 	if m.isCompleted() {
 		s += "Press enter to restart.\n"
