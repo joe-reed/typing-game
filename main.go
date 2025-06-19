@@ -9,6 +9,7 @@ import (
 	"github.com/wordgen/wordlists/eff"
 	"math"
 	"math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ type model struct {
 	cursor        cursor.Model
 	stopwatch     stopwatch.Model
 	times         []time.Duration
-	highscore     time.Duration
+	highscore     int
 }
 
 func (m model) isAtEnd() bool {
@@ -37,7 +38,7 @@ func (m model) hasError() bool {
 	return m.errorPosition != nil
 }
 
-func (m model) wordsPerMinute() int64 {
+func (m model) wordsPerMinute() int {
 	wordCount := len(strings.Split(m.currentWord, " "))
 	seconds := m.stopwatch.Elapsed().Seconds()
 
@@ -45,7 +46,7 @@ func (m model) wordsPerMinute() int64 {
 		return 0
 	}
 
-	return int64(math.Trunc(float64(wordCount) / math.Round(seconds) * 60))
+	return int(math.Trunc(float64(wordCount) / math.Round(seconds) * 60))
 }
 
 func initialModel() model {
@@ -75,7 +76,7 @@ func (m model) Init() tea.Cmd {
 	return tea.Batch(cursor.Blink, LoadHighscore)
 }
 
-func SaveHighScore(time time.Duration) tea.Cmd {
+func SaveHighScore(wpm int) tea.Cmd {
 	return func() tea.Msg {
 		file, err := os.OpenFile("highscore.txt", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0644)
 		if err != nil {
@@ -84,7 +85,7 @@ func SaveHighScore(time time.Duration) tea.Cmd {
 
 		defer file.Close()
 
-		_, err = file.WriteString(time.String())
+		_, err = file.WriteString(strconv.Itoa(wpm))
 
 		if err != nil {
 			return tea.Quit()
@@ -94,8 +95,8 @@ func SaveHighScore(time time.Duration) tea.Cmd {
 	}
 }
 
-type LoadedHighscoreMsg struct {
-	Highscore time.Duration
+type HighscoreLoadedMsg struct {
+	Highscore int
 }
 
 type FailedToLoadHighscoreMsg struct {
@@ -107,23 +108,23 @@ func LoadHighscore() tea.Msg {
 
 	if err != nil {
 		if os.IsNotExist(err) {
-			return LoadedHighscoreMsg{Highscore: 0}
+			return HighscoreLoadedMsg{Highscore: 0}
 		}
 
 		return FailedToLoadHighscoreMsg{Error: err}
 	}
 
-	duration, err := time.ParseDuration(strings.TrimSpace(string(data)))
+	highscore, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
 		return FailedToLoadHighscoreMsg{Error: err}
 	}
 
-	return LoadedHighscoreMsg{Highscore: duration}
+	return HighscoreLoadedMsg{Highscore: highscore}
 }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if _, ok := msg.(LoadedHighscoreMsg); ok {
-		m.highscore = msg.(LoadedHighscoreMsg).Highscore
+	if _, ok := msg.(HighscoreLoadedMsg); ok {
+		m.highscore = msg.(HighscoreLoadedMsg).Highscore
 		return m, nil
 	}
 
@@ -158,12 +159,14 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.stopwatch.Running() {
-			time := m.stopwatch.Elapsed()
-			m.times = append(m.times, time)
+			t := m.stopwatch.Elapsed()
+			m.times = append(m.times, t)
 
-			if time < m.highscore || m.highscore == 0 {
-				m.highscore = time
-				cmds = append(cmds, SaveHighScore(m.highscore))
+			wpm := m.wordsPerMinute()
+
+			if wpm > m.highscore {
+				m.highscore = wpm
+				cmds = append(cmds, SaveHighScore(wpm))
 			}
 
 			cmds = append(cmds, m.stopwatch.Stop())
@@ -229,7 +232,7 @@ func (m model) View() string {
 
 	s += "\n"
 
-	s += fmt.Sprintf("Highscore: %s\n", m.highscore.String())
+	s += fmt.Sprintf("Highscore: %dwpm\n", m.highscore)
 
 	if m.isCompleted() {
 		s += "Press enter to restart.\n"
