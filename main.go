@@ -22,7 +22,7 @@ type model struct {
 	errorPosition *int
 	cursor        cursor.Model
 	stopwatch     stopwatch.Model
-	times         []time.Duration
+	scores        []int
 	highscore     int
 }
 
@@ -151,7 +151,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			case "enter":
 				newModel := initialModel()
-				newModel.times = m.times
+				newModel.scores = m.scores
 				newModel.highscore = m.highscore
 
 				return newModel, tea.Batch(cmds...)
@@ -159,10 +159,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 
 		if m.stopwatch.Running() {
-			t := m.stopwatch.Elapsed()
-			m.times = append(m.times, t)
-
 			wpm := m.wordsPerMinute()
+			m.scores = append(m.scores, wpm)
 
 			if wpm > m.highscore {
 				m.highscore = wpm
@@ -224,10 +222,10 @@ func (m model) View() string {
 	s += m.stopwatch.View()
 	s += "\n"
 	s += fmt.Sprintf("%dwpm", m.wordsPerMinute())
-	s += "\n"
+	s += "\n\n"
 
-	for i, t := range m.times {
-		s += fmt.Sprintf("Time %d: %s\n", i+1, t.String())
+	for i, score := range m.scores {
+		s += fmt.Sprintf("Score %d: %dwpm\n", i+1, score)
 	}
 
 	s += "\n"
